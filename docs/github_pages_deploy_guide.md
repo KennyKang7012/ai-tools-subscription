@@ -43,9 +43,11 @@ GitHub Pages 的專案網站預設網址為子路徑形式：
 2. 點擊上方分頁 **Settings**（設定）。
 3. 在左側選單找到 **Pages**。
 4. 在 **Build and deployment** 區塊的 **Source** 下拉選單中，選擇 **GitHub Actions**（注意：不要選 `Deploy from a branch`）。
-5. 前往上方 **Actions** 分頁，即可看到 `Deploy to GitHub Pages` 正在執行（若尚未觸發，可點擊右側 **Run workflow** 手動執行一次）。
-6. 等待 `build` 與 `deploy` 兩個步驟都顯示綠色勾勾（約 1 分鐘），頁面上就會顯示正式網址：
+5. 前往上方 **Actions** 分頁，即可看到 `Deploy to GitHub Pages` 正在執行；**特別注意**：若您在尚未切換成 `GitHub Actions` 前就已經先推送了 `main`，第一次自動觸發的執行會失敗，此時切換完 **Source: GitHub Actions** 後，請務必於 **Actions → Deploy to GitHub Pages → Run workflow**（或本機執行 `gh workflow run deploy.yml --ref main`）手動觸發一次重新部署，網站才會正式出現。
+6. 等待 `build` 與 `deploy` 兩個步驟都顯示綠色勾勾（約 30 秒～1 分鐘），頁面上就會顯示正式網址：
    - `https://kennykang7012.github.io/ai-tools-subscription/`
+
+> **首次推送 Workflow 的權限備忘**：若在本機執行 `git push` 推送 `.github/workflows/deploy.yml` 時出現 `refusing to allow an OAuth App to create or update workflow ... without workflow scope`，只需在終端機執行一次 `gh auth refresh -h github.com -s workflow` 補齊 `workflow` 權限即可（一次性設定）。
 
 ---
 
