@@ -8,7 +8,15 @@ import { SubscriptionModal } from './components/SubscriptionModal';
 import { SubscriptionTable } from './components/SubscriptionTable';
 import { DEFAULT_EXCHANGE_RATE, STARTER_SUBSCRIPTIONS } from './data/presets';
 import type { Currency, SubscriptionItem } from './types/subscription';
-import { safeGetStorageItem, safeSetStorageItem } from './utils/storage';
+import {
+  persistItemsIfAllowed,
+  safeGetStorageItem,
+  safeSetStorageItem,
+} from './utils/storage';
+import {
+  applySubscriptionUpdate,
+  type SubscriptionFormData,
+} from './utils/subscriptionHelpers';
 import { validateImportPayload, validateSubscriptionList } from './utils/validation';
 
 const STORAGE_KEYS = {
@@ -101,10 +109,9 @@ export function App() {
   const [exchangeRate, setExchangeRate] = useState<number>(initial.exchangeRate);
   const [displayCurrency, setDisplayCurrency] = useState<Currency>(initial.displayCurrency);
   const [storageWarning, setStorageWarning] = useState<string | null>(initial.storageWarning);
-
-  // If stored items were corrupted, skip the first mount write so we don't clobber raw storage immediately
-  const skipCorruptedItemsWriteRef = useRef(initial.hasCorruptedStoredItems);
-  const isFirstItemsEffectRef = useRef(true);
+  const [allowItemsPersist, setAllowItemsPersist] = useState<boolean>(
+    !initial.hasCorruptedStoredItems
+  );
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<SubscriptionItem | null>(null);
@@ -112,20 +119,17 @@ export function App() {
   const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
 
   useEffect(() => {
-    if (isFirstItemsEffectRef.current) {
-      isFirstItemsEffectRef.current = false;
-      if (skipCorruptedItemsWriteRef.current) {
-        return;
-      }
-    }
-    skipCorruptedItemsWriteRef.current = false;
-
     const storage = getBrowserLocalStorage();
-    const res = safeSetStorageItem(storage, STORAGE_KEYS.ITEMS, JSON.stringify(items));
+    const res = persistItemsIfAllowed(
+      storage,
+      STORAGE_KEYS.ITEMS,
+      JSON.stringify(items),
+      allowItemsPersist
+    );
     if (!res.ok && res.error) {
       setStorageWarning(res.error);
     }
-  }, [items]);
+  }, [items, allowItemsPersist]);
 
   useEffect(() => {
     const storage = getBrowserLocalStorage();
@@ -148,15 +152,13 @@ export function App() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  const handleSaveSubscription = (
-    data: Omit<SubscriptionItem, 'id' | 'updatedAt'>,
-    existingId?: string
-  ) => {
+  const handleSaveSubscription = (data: SubscriptionFormData, existingId?: string) => {
     const now = new Date().toISOString();
+    setAllowItemsPersist(true);
     if (existingId) {
       setItems((prev) =>
         prev.map((item) =>
-          item.id === existingId ? { ...item, ...data, updatedAt: now } : item
+          item.id === existingId ? applySubscriptionUpdate(item, data, now) : item
         )
       );
       showToast(`已更新「${data.name}」`);
@@ -166,12 +168,16 @@ export function App() {
         id: `sub-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         updatedAt: now,
       };
+      if (newItem.billingCycle === 'monthly' || newItem.billingMonth === undefined) {
+        delete newItem.billingMonth;
+      }
       setItems((prev) => [newItem, ...prev]);
       showToast(`已新增「${data.name}」`);
     }
   };
 
   const handleToggleActive = (id: string) => {
+    setAllowItemsPersist(true);
     setItems((prev) =>
       prev.map((item) =>
         item.id === id
@@ -183,6 +189,7 @@ export function App() {
 
   const handleDelete = (id: string) => {
     const target = items.find((i) => i.id === id);
+    setAllowItemsPersist(true);
     setItems((prev) => prev.filter((item) => item.id !== id));
     if (target) showToast(`已移除「${target.name}」`);
   };
@@ -214,6 +221,7 @@ export function App() {
         return;
       }
 
+      setAllowItemsPersist(true);
       setItems(result.data.items);
       if (result.data.exchangeRate !== undefined) {
         setExchangeRate(result.data.exchangeRate);
@@ -227,6 +235,7 @@ export function App() {
   };
 
   const handleConfirmResetPresets = () => {
+    setAllowItemsPersist(true);
     setItems(STARTER_SUBSCRIPTIONS);
     setExchangeRate(DEFAULT_EXCHANGE_RATE);
     setResetModalOpen(false);

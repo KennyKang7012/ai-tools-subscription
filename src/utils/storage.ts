@@ -49,3 +49,18 @@ export function safeSetStorageItem(
     };
   }
 }
+
+/**
+ * 僅在明確允許持久化（非損壞資料保護狀態）時寫入訂閱清單
+ */
+export function persistItemsIfAllowed(
+  storage: Pick<Storage, 'setItem'> | undefined,
+  key: string,
+  serializedItems: string,
+  allowPersist: boolean
+): StorageWriteResult {
+  if (!allowPersist) {
+    return { ok: true };
+  }
+  return safeSetStorageItem(storage, key, serializedItems);
+}

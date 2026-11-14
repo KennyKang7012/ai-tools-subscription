@@ -8,12 +8,13 @@ import {
   type Currency,
   type SubscriptionItem,
 } from '../types/subscription';
+import { buildSubscriptionFormData, type SubscriptionFormData } from '../utils/subscriptionHelpers';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
   editingItem: SubscriptionItem | null;
   onClose: () => void;
-  onSave: (data: Omit<SubscriptionItem, 'id' | 'updatedAt'>, existingId?: string) => void;
+  onSave: (data: SubscriptionFormData, existingId?: string) => void;
 }
 
 export function SubscriptionModal({
@@ -73,27 +74,20 @@ export function SubscriptionModal({
     const numericPrice = parseFloat(price);
     const numericDay = Math.min(31, Math.max(1, parseInt(billingDay, 10) || 1));
     const parsedMonth = billingMonth ? parseInt(billingMonth, 10) : undefined;
-    const validMonth =
-      billingCycle === 'yearly' &&
-      parsedMonth !== undefined &&
-      parsedMonth >= 1 &&
-      parsedMonth <= 12
-        ? parsedMonth
-        : undefined;
     if (!name.trim() || Number.isNaN(numericPrice) || numericPrice < 0) return;
 
     onSave(
-      {
-        name: name.trim(),
+      buildSubscriptionFormData({
+        name,
         category,
         price: numericPrice,
         currency,
         billingCycle,
         billingDay: numericDay,
-        ...(validMonth !== undefined ? { billingMonth: validMonth } : {}),
+        billingMonth: parsedMonth,
         active,
-        notes: notes.trim() || undefined,
-      },
+        notes,
+      }),
       editingItem?.id
     );
     onClose();
@@ -239,7 +233,13 @@ export function SubscriptionModal({
                 </label>
                 <select
                   value={billingCycle}
-                  onChange={(e) => setBillingCycle(e.target.value as BillingCycle)}
+                  onChange={(e) => {
+                    const nextCycle = e.target.value as BillingCycle;
+                    setBillingCycle(nextCycle);
+                    if (nextCycle === 'monthly') {
+                      setBillingMonth('');
+                    }
+                  }}
                   className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-sm text-white outline-none focus:border-cyan-500"
                 >
                   <option value="monthly">月繳</option>

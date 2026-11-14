@@ -7,7 +7,15 @@ import {
   getMonthlyCostInUSD,
   getMonthlyNativePrice,
 } from '../src/utils/currency.ts';
-import { safeGetStorageItem, safeSetStorageItem } from '../src/utils/storage.ts';
+import {
+  persistItemsIfAllowed,
+  safeGetStorageItem,
+  safeSetStorageItem,
+} from '../src/utils/storage.ts';
+import {
+  applySubscriptionUpdate,
+  buildSubscriptionFormData,
+} from '../src/utils/subscriptionHelpers.ts';
 import {
   validateImportPayload,
   validateSubscriptionList,
@@ -46,6 +54,12 @@ describe('CR-01: 匯入與本機載入逐筆驗證', () => {
     );
     assert.equal(negativePrice.ok, false);
 
+    const nanPrice = validateSubscriptionList([{ ...validItem, price: Number.NaN }]);
+    assert.equal(nanPrice.ok, false);
+
+    const infPrice = validateSubscriptionList([{ ...validItem, price: Number.POSITIVE_INFINITY }]);
+    assert.equal(infPrice.ok, false);
+
     const badDay = validateImportPayload(
       JSON.stringify({ items: [{ ...validItem, billingDay: 32 }] })
     );
@@ -78,7 +92,7 @@ describe('CR-01: 匯入與本機載入逐筆驗證', () => {
   });
 });
 
-describe('CR-02: 瀏覽器儲存例外處理', () => {
+describe('CR-02 & CR-06: 瀏覽器儲存例外與 StrictMode 防覆寫保護', () => {
   it('讀取拋出 SecurityError 時安全回傳錯誤訊息而不中斷', () => {
     const throwingStorage = {
       getItem() {
@@ -100,9 +114,40 @@ describe('CR-02: 瀏覽器儲存例外處理', () => {
     assert.equal(res.ok, false);
     assert.ok(res.error);
   });
+
+  it('CR-06 回歸：損壞資料保護下重複執行儲存副作用（模擬 StrictMode 雙重掛載）不會覆寫原始資料', () => {
+    const store = new Map<string, string>([['warroom_subscriptions_v1', '[null]']]);
+    const memoryStorage = {
+      setItem(k: string, v: string) {
+        store.set(k, v);
+      },
+    };
+
+    // StrictMode mount #1 and #2 (plus subsequent currency/rate re-renders) with allowPersist = false
+    for (let i = 0; i < 4; i++) {
+      const res = persistItemsIfAllowed(
+        memoryStorage,
+        'warroom_subscriptions_v1',
+        JSON.stringify([{ id: 'starter', name: 'Starter' }]),
+        false
+      );
+      assert.equal(res.ok, true);
+      assert.equal(store.get('warroom_subscriptions_v1'), '[null]');
+    }
+
+    // Only after explicit user action sets allowPersist = true does storage update
+    const writeAfterAction = persistItemsIfAllowed(
+      memoryStorage,
+      'warroom_subscriptions_v1',
+      JSON.stringify([{ id: 'user-1', name: 'User Item' }]),
+      true
+    );
+    assert.equal(writeAfterAction.ok, true);
+    assert.match(store.get('warroom_subscriptions_v1') ?? '', /User Item/);
+  });
 });
 
-describe('CR-03 & 雙幣別計算: 年繳扣款日期與攤提', () => {
+describe('CR-03 & CR-07: 年繳扣款日期、短月份與清除月份回歸', () => {
   it('年繳未指定月份時 getDaysUntilNextBilling 回傳 null 且標籤明確標示', () => {
     const yearlyNoMonth: SubscriptionItem = {
       id: 'y-1',
@@ -121,7 +166,7 @@ describe('CR-03 & 雙幣別計算: 年繳扣款日期與攤提', () => {
     assert.equal(getMonthlyCostInTWD(yearlyNoMonth, 32), 3200);
   });
 
-  it('年繳有指定月份時正確計算跨年倒數與 2 月短月份', () => {
+  it('年繳有指定月份時正確計算跨年倒數，且 2 月短月份正確夾緊至 28/29 日', () => {
     const yearlyMar1: SubscriptionItem = {
       id: 'y-2',
       name: 'Annual Pro',
@@ -134,9 +179,23 @@ describe('CR-03 & 雙幣別計算: 年繳扣款日期與攤提', () => {
       active: true,
       updatedAt: '2026-11-14T00:00:00.000Z',
     };
-    // From 2026-11-14 to 2027-03-01: 16 (Nov) + 31 (Dec) + 31 (Jan) + 28 (Feb) + 1 (Mar) = 107 days
+    // 2026-11-14 -> 2027-03-01: 16 + 31 + 31 + 28 + 1 = 107 days
     assert.equal(getDaysUntilNextBilling(yearlyMar1, new Date(2026, 10, 14)), 107);
     assert.equal(formatBillingScheduleLabel(yearlyMar1), '每年 3/1');
+
+    const monthly31: SubscriptionItem = {
+      id: 'm-31',
+      name: 'Short Month Tool',
+      category: 'other',
+      price: 10,
+      currency: 'USD',
+      billingCycle: 'monthly',
+      billingDay: 31,
+      active: true,
+      updatedAt: '2026-11-14T00:00:00.000Z',
+    };
+    // 2026-02-01 -> 2026-02-28 (non-leap year): 27 days
+    assert.equal(getDaysUntilNextBilling(monthly31, new Date(2026, 1, 1)), 27);
   });
 
   it('月繳與台幣換算正確', () => {
@@ -154,5 +213,78 @@ describe('CR-03 & 雙幣別計算: 年繳扣款日期與攤提', () => {
     assert.equal(getDaysUntilNextBilling(yt, new Date(2026, 10, 14)), 8);
     assert.equal(getMonthlyCostInTWD(yt, 32.5), 199);
     assert.ok(Math.abs(getMonthlyCostInUSD(yt, 32.5) - 199 / 32.5) < 1e-9);
+  });
+
+  it('CR-07 回歸：年繳選「未指定月份」或改為月繳後，確實清除既有 billingMonth 且不回帶', () => {
+    const existingYearlyDec: SubscriptionItem = {
+      id: 'preset-chatgpt',
+      name: 'ChatGPT Plus',
+      category: 'ai',
+      price: 240,
+      currency: 'USD',
+      billingCycle: 'yearly',
+      billingMonth: 12,
+      billingDay: 5,
+      active: true,
+      updatedAt: '2026-11-14T00:00:00.000Z',
+    };
+
+    // Case 1: Clear billingMonth while keeping yearly
+    const clearedForm = buildSubscriptionFormData({
+      name: 'ChatGPT Plus',
+      category: 'ai',
+      price: 240,
+      currency: 'USD',
+      billingCycle: 'yearly',
+      billingDay: 5,
+      billingMonth: undefined,
+      active: true,
+    });
+    const afterClear = applySubscriptionUpdate(
+      existingYearlyDec,
+      clearedForm,
+      '2026-11-14T12:00:00.000Z'
+    );
+    assert.equal(afterClear.billingMonth, undefined);
+    assert.equal('billingMonth' in afterClear, false);
+    assert.equal(getDaysUntilNextBilling(afterClear, new Date(2026, 10, 14)), null);
+    assert.equal(formatBillingScheduleLabel(afterClear), '每年（未指定月份，5 號）');
+
+    // Case 2: Switch yearly (month 12) -> monthly -> yearly (unspecified)
+    const monthlyForm = buildSubscriptionFormData({
+      name: 'ChatGPT Plus',
+      category: 'ai',
+      price: 20,
+      currency: 'USD',
+      billingCycle: 'monthly',
+      billingDay: 5,
+      billingMonth: 12, // even if passed, monthly must strip it
+      active: true,
+    });
+    const afterMonthly = applySubscriptionUpdate(
+      existingYearlyDec,
+      monthlyForm,
+      '2026-11-14T12:05:00.000Z'
+    );
+    assert.equal(afterMonthly.billingMonth, undefined);
+    assert.equal('billingMonth' in afterMonthly, false);
+
+    const backToYearlyForm = buildSubscriptionFormData({
+      name: 'ChatGPT Plus',
+      category: 'ai',
+      price: 240,
+      currency: 'USD',
+      billingCycle: 'yearly',
+      billingDay: 5,
+      billingMonth: undefined,
+      active: true,
+    });
+    const afterBackToYearly = applySubscriptionUpdate(
+      afterMonthly,
+      backToYearlyForm,
+      '2026-11-14T12:10:00.000Z'
+    );
+    assert.equal(afterBackToYearly.billingMonth, undefined);
+    assert.equal(getDaysUntilNextBilling(afterBackToYearly, new Date(2026, 10, 14)), null);
   });
 });
