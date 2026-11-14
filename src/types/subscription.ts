@@ -10,6 +10,7 @@ export interface SubscriptionItem {
   currency: Currency;
   billingCycle: BillingCycle;
   billingDay: number; // 1-31
+  billingMonth?: number; // 1-12，年繳扣款月份（選填，向下相容舊資料）
   active: boolean;
   notes?: string;
   updatedAt: string;

@@ -7,6 +7,7 @@ import {
   type SubscriptionItem,
 } from '../types/subscription';
 import {
+  formatBillingScheduleLabel,
   formatCurrency,
   getMonthlyCostInDisplayCurrency,
   getMonthlyNativePrice,
@@ -154,7 +155,7 @@ export function SubscriptionTable({
               <th className="px-5 py-3">狀態</th>
               <th className="px-4 py-3">訂閱工具</th>
               <th className="px-4 py-3">分類</th>
-              <th className="px-4 py-3">扣款日</th>
+              <th className="px-4 py-3">扣款週期</th>
               <th className="px-4 py-3 text-right">原幣計費</th>
               <th className="px-4 py-3 text-right">
                 月均折合 ({displayCurrency})
@@ -237,9 +238,9 @@ export function SubscriptionTable({
                       </span>
                     </td>
 
-                    {/* Billing Day */}
+                    {/* Billing Schedule */}
                     <td className="px-4 py-3.5 text-xs text-slate-300">
-                      <span className="font-mono-nums">每月 {item.billingDay} 號</span>
+                      <span className="font-mono-nums">{formatBillingScheduleLabel(item)}</span>
                     </td>
 
                     {/* Native Price */}

@@ -8,12 +8,13 @@ import {
   type Currency,
   type SubscriptionItem,
 } from '../types/subscription';
+import { buildSubscriptionFormData, type SubscriptionFormData } from '../utils/subscriptionHelpers';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
   editingItem: SubscriptionItem | null;
   onClose: () => void;
-  onSave: (data: Omit<SubscriptionItem, 'id' | 'updatedAt'>, existingId?: string) => void;
+  onSave: (data: SubscriptionFormData, existingId?: string) => void;
 }
 
 export function SubscriptionModal({
@@ -27,6 +28,7 @@ export function SubscriptionModal({
   const [price, setPrice] = useState('20');
   const [currency, setCurrency] = useState<Currency>('USD');
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
+  const [billingMonth, setBillingMonth] = useState<string>('');
   const [billingDay, setBillingDay] = useState('1');
   const [active, setActive] = useState(true);
   const [notes, setNotes] = useState('');
@@ -39,6 +41,7 @@ export function SubscriptionModal({
       setPrice(String(editingItem.price));
       setCurrency(editingItem.currency);
       setBillingCycle(editingItem.billingCycle);
+      setBillingMonth(editingItem.billingMonth ? String(editingItem.billingMonth) : '');
       setBillingDay(String(editingItem.billingDay));
       setActive(editingItem.active);
       setNotes(editingItem.notes ?? '');
@@ -48,6 +51,7 @@ export function SubscriptionModal({
       setPrice('20');
       setCurrency('USD');
       setBillingCycle('monthly');
+      setBillingMonth('');
       setBillingDay('1');
       setActive(true);
       setNotes('');
@@ -69,19 +73,21 @@ export function SubscriptionModal({
     e.preventDefault();
     const numericPrice = parseFloat(price);
     const numericDay = Math.min(31, Math.max(1, parseInt(billingDay, 10) || 1));
+    const parsedMonth = billingMonth ? parseInt(billingMonth, 10) : undefined;
     if (!name.trim() || Number.isNaN(numericPrice) || numericPrice < 0) return;
 
     onSave(
-      {
-        name: name.trim(),
+      buildSubscriptionFormData({
+        name,
         category,
         price: numericPrice,
         currency,
         billingCycle,
         billingDay: numericDay,
+        billingMonth: parsedMonth,
         active,
-        notes: notes.trim() || undefined,
-      },
+        notes,
+      }),
       editingItem?.id
     );
     onClose();
@@ -160,7 +166,7 @@ export function SubscriptionModal({
 
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-300">
-                每月扣款日 (1-31)
+                {billingCycle === 'yearly' ? '扣款日 (1-31)' : '每月扣款日 (1-31)'}
               </label>
               <input
                 type="number"
@@ -171,6 +177,26 @@ export function SubscriptionModal({
                 className="font-mono-nums w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500"
               />
             </div>
+
+            {billingCycle === 'yearly' && (
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-medium text-slate-300">
+                  年繳扣款月份（選填，設定後可顯示精確扣款倒數）
+                </label>
+                <select
+                  value={billingMonth}
+                  onChange={(e) => setBillingMonth(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500"
+                >
+                  <option value="">未指定月份（不顯示倒數）</option>
+                  {Array.from({ length: 12 }, (_, idx) => idx + 1).map((m) => (
+                    <option key={m} value={String(m)}>
+                      每年 {m} 月
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-300">
@@ -207,7 +233,13 @@ export function SubscriptionModal({
                 </label>
                 <select
                   value={billingCycle}
-                  onChange={(e) => setBillingCycle(e.target.value as BillingCycle)}
+                  onChange={(e) => {
+                    const nextCycle = e.target.value as BillingCycle;
+                    setBillingCycle(nextCycle);
+                    if (nextCycle === 'monthly') {
+                      setBillingMonth('');
+                    }
+                  }}
                   className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-sm text-white outline-none focus:border-cyan-500"
                 >
                   <option value="monthly">月繳</option>
