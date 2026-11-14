@@ -1,4 +1,4 @@
-import type { Currency, SubscriptionItem } from '../types/subscription';
+import type { Currency, SubscriptionItem } from '../types/subscription.ts';
 
 /**
  * 將單筆訂閱換算為「每月原幣別金額」（年繳自動除 12 攤提）
@@ -56,7 +56,7 @@ export function formatCurrency(amount: number, currency: Currency, decimals?: nu
 }
 
 /**
- * 計算距離下次扣款還有幾天（以本月/下月計算）
+ * 計算距離下次月繳扣款日還有幾天（支援短月份與跨年）
  */
 export function getDaysUntilBilling(billingDay: number, fromDate = new Date()): number {
   const today = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
@@ -72,4 +72,60 @@ export function getDaysUntilBilling(billingDay: number, fromDate = new Date()): 
 
   const diffMs = target.getTime() - today.getTime();
   return Math.round(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * 計算距離下次扣款還有幾天（區分月繳與年繳；年繳未指定月份時回傳 null，不猜測日期）
+ */
+export function getDaysUntilNextBilling(
+  item: SubscriptionItem,
+  fromDate = new Date()
+): number | null {
+  if (item.billingCycle === 'monthly') {
+    return getDaysUntilBilling(item.billingDay, fromDate);
+  }
+
+  if (
+    typeof item.billingMonth !== 'number' ||
+    !Number.isInteger(item.billingMonth) ||
+    item.billingMonth < 1 ||
+    item.billingMonth > 12
+  ) {
+    return null;
+  }
+
+  const today = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+  const monthIndex = item.billingMonth - 1;
+
+  const daysInThisYearMonth = new Date(today.getFullYear(), monthIndex + 1, 0).getDate();
+  const clampedThisYear = Math.min(item.billingDay, daysInThisYearMonth);
+  let target = new Date(today.getFullYear(), monthIndex, clampedThisYear);
+
+  if (target < today) {
+    const nextYear = today.getFullYear() + 1;
+    const daysInNextYearMonth = new Date(nextYear, monthIndex + 1, 0).getDate();
+    const clampedNextYear = Math.min(item.billingDay, daysInNextYearMonth);
+    target = new Date(nextYear, monthIndex, clampedNextYear);
+  }
+
+  const diffMs = target.getTime() - today.getTime();
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * 格式化扣款週期標籤
+ */
+export function formatBillingScheduleLabel(item: SubscriptionItem): string {
+  if (item.billingCycle === 'yearly') {
+    if (
+      typeof item.billingMonth === 'number' &&
+      Number.isInteger(item.billingMonth) &&
+      item.billingMonth >= 1 &&
+      item.billingMonth <= 12
+    ) {
+      return `每年 ${item.billingMonth}/${item.billingDay}`;
+    }
+    return `每年（未指定月份，${item.billingDay} 號）`;
+  }
+  return `每月 ${item.billingDay} 號`;
 }

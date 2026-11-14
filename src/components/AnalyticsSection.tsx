@@ -6,10 +6,10 @@ import {
   type SubscriptionItem,
 } from '../types/subscription';
 import {
+  formatBillingScheduleLabel,
   formatCurrency,
-  getDaysUntilBilling,
+  getDaysUntilNextBilling,
   getMonthlyCostInDisplayCurrency,
-  getMonthlyNativePrice,
 } from '../utils/currency';
 
 interface AnalyticsSectionProps {
@@ -78,9 +78,15 @@ export function AnalyticsSection({
       ? getMonthlyCostInDisplayCurrency(topSpenders[0], displayCurrency, exchangeRate)
       : 1;
 
-  // Upcoming billing radar (next 5)
-  const upcomingBills = [...activeItems]
-    .sort((a, b) => getDaysUntilBilling(a.billingDay) - getDaysUntilBilling(b.billingDay))
+  // Upcoming billing radar (next 5; known dates sorted ascending, unknown yearly dates last)
+  const upcomingBills = activeItems
+    .map((item) => ({ item, daysLeft: getDaysUntilNextBilling(item) }))
+    .sort((a, b) => {
+      if (a.daysLeft === null && b.daysLeft === null) return 0;
+      if (a.daysLeft === null) return 1;
+      if (b.daysLeft === null) return -1;
+      return a.daysLeft - b.daysLeft;
+    })
     .slice(0, 5);
 
   const focusedCategory = hoveredCat
@@ -267,7 +273,7 @@ export function AnalyticsSection({
             扣款雷達（Upcoming）
           </h2>
           <p className="mt-0.5 text-xs text-slate-400">
-            依每月扣款日排序，掌握近期現金流
+            依下次扣款日排序，顯示單次實際扣款金額
           </p>
         </div>
 
@@ -277,10 +283,8 @@ export function AnalyticsSection({
               尚無即將扣款項目
             </div>
           ) : (
-            upcomingBills.map((item) => {
-              const daysLeft = getDaysUntilBilling(item.billingDay);
-              const nativeMonthly = getMonthlyNativePrice(item);
-              const isSoon = daysLeft <= 3;
+            upcomingBills.map(({ item, daysLeft }) => {
+              const isSoon = daysLeft !== null && daysLeft <= 3;
 
               return (
                 <div
@@ -295,17 +299,34 @@ export function AnalyticsSection({
                           : 'border-slate-700/80 bg-slate-800/70 text-slate-300'
                       }`}
                     >
-                      <span className="font-mono-nums text-xs font-bold leading-none">
-                        {item.billingDay}
-                      </span>
-                      <span className="text-[9px] leading-tight opacity-75">日</span>
+                      {item.billingCycle === 'yearly' && item.billingMonth ? (
+                        <>
+                          <span className="font-mono-nums text-[10px] font-bold leading-none">
+                            {item.billingMonth}/{item.billingDay}
+                          </span>
+                          <span className="text-[9px] leading-tight opacity-75">年</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-mono-nums text-xs font-bold leading-none">
+                            {item.billingDay}
+                          </span>
+                          <span className="text-[9px] leading-tight opacity-75">
+                            {item.billingCycle === 'yearly' ? '年?' : '日'}
+                          </span>
+                        </>
+                      )}
                     </div>
                     <div className="min-w-0">
                       <div className="truncate text-xs font-semibold text-slate-200">
                         {item.name}
                       </div>
                       <div className="text-[11px] text-slate-400">
-                        {daysLeft === 0 ? (
+                        {daysLeft === null ? (
+                          <span className="text-slate-400">
+                            {formatBillingScheduleLabel(item)}
+                          </span>
+                        ) : daysLeft === 0 ? (
                           <span className="font-medium text-amber-300">今日扣款</span>
                         ) : (
                           <span>{daysLeft} 天後扣款</span>
@@ -316,11 +337,14 @@ export function AnalyticsSection({
 
                   <div className="text-right shrink-0 ml-2">
                     <div className="font-mono-nums text-xs font-semibold text-white">
-                      {formatCurrency(nativeMonthly, item.currency)}
+                      {formatCurrency(item.price, item.currency)}
+                      <span className="ml-0.5 text-[10px] font-normal text-slate-400">
+                        /{item.billingCycle === 'yearly' ? '年' : '月'}
+                      </span>
                     </div>
                     {item.currency === 'USD' && (
                       <div className="font-mono-nums text-[10px] text-slate-400">
-                        ≈ {formatCurrency(nativeMonthly * exchangeRate, 'TWD')}
+                        ≈ {formatCurrency(item.price * exchangeRate, 'TWD')}
                       </div>
                     )}
                   </div>

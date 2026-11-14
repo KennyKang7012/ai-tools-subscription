@@ -1,8 +1,9 @@
 import { CalendarClock, Cpu, DollarSign, TrendingUp } from 'lucide-react';
 import type { Currency, SubscriptionItem } from '../types/subscription';
 import {
+  formatBillingScheduleLabel,
   formatCurrency,
-  getDaysUntilBilling,
+  getDaysUntilNextBilling,
   getMonthlyCostInDisplayCurrency,
   getMonthlyNativePrice,
 } from '../utils/currency';
@@ -50,18 +51,19 @@ export function KpiGrid({ items, displayCurrency, exchangeRate }: KpiGridProps) 
       getMonthlyCostInDisplayCurrency(a, displayCurrency, exchangeRate)
   )[0];
 
-  // Next upcoming billing item
-  const nextBillingItem = [...activeItems].sort(
-    (a, b) => getDaysUntilBilling(a.billingDay) - getDaysUntilBilling(b.billingDay)
-  )[0];
+  // Next upcoming billing item (only items with known next billing date)
+  const nextBillingEntry = activeItems
+    .map((item) => ({ item, daysLeft: getDaysUntilNextBilling(item) }))
+    .filter((entry): entry is { item: SubscriptionItem; daysLeft: number } => entry.daysLeft !== null)
+    .sort((a, b) => a.daysLeft - b.daysLeft)[0];
 
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {/* Card 1: Monthly Total */}
+      {/* Card 1: Monthly Amortized Total */}
       <div className="relative overflow-hidden rounded-2xl border border-cyan-500/25 bg-slate-900/75 p-5 shadow-[0_0_25px_rgba(6,182,212,0.08)] backdrop-blur">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium tracking-wider text-slate-400 uppercase">
-            本月實付總支出
+            每月平均支出（含年繳攤提）
           </span>
           <div className="rounded-lg bg-cyan-500/15 p-2 text-cyan-400">
             <DollarSign className="h-4 w-4" />
@@ -158,14 +160,16 @@ export function KpiGrid({ items, displayCurrency, exchangeRate }: KpiGridProps) 
               </span>
             </div>
             <div className="mt-2.5 text-xs text-slate-400">
-              {nextBillingItem && (
+              {nextBillingEntry ? (
                 <span>
-                  最近扣款：<strong className="text-slate-200">{nextBillingItem.name}</strong>（
-                  {getDaysUntilBilling(nextBillingItem.billingDay) === 0
+                  最近扣款：<strong className="text-slate-200">{nextBillingEntry.item.name}</strong>（
+                  {nextBillingEntry.daysLeft === 0
                     ? '今天'
-                    : `${getDaysUntilBilling(nextBillingItem.billingDay)} 天後`}
-                  ，每月 {nextBillingItem.billingDay} 號）
+                    : `${nextBillingEntry.daysLeft} 天後`}
+                  ，{formatBillingScheduleLabel(nextBillingEntry.item)}）
                 </span>
+              ) : (
+                <span>啟用項目尚未設定確定扣款月份</span>
               )}
             </div>
           </>
