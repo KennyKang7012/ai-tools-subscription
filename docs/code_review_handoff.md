@@ -124,7 +124,7 @@ P1 表示優先修正；P2 表示一般修正。保留各輪問題描述作為�
 - Gemini 已採選填 `billingMonth` 與「整份驗證才匯入」，目前程式可確認此實作；不代表使用者另行拍板所有產品細節。
 - 本次追蹤的 CR-01～CR-07 沒有待修正項目；第二輪修正已通過下方所列驗證。
 - 驗證範圍限制：檔案選取器實際匯入、真實儲存權限／配額限制、手機版面、完整鍵盤操作及即時匯率 API 尚未驗證，不宣稱這些範圍已通過。
-- CR-06 已對實際 App 的副作用進行重播、重新渲染及重新掛載模擬；未在實際瀏覽器注入損壞資料。專案新增的回歸測試直接測試儲存保護工具，尚未涵蓋完整 React StrictMode 生命週期，可作為後續測試強化項目。
+- CR-06 已對實際 App 的副作用進行重播、重新渲染及重新掛載模擬；Gemini 後續另回報完成 Chrome 開發模式注入損壞資料及幣別切換實測，詳見第 8 段補充紀錄。Codex 已複核其截圖、頁面快照與 console 紀錄，未獨立重跑該 Chrome 測試或取得原始 localStorage 讀值輸出；不要將此回報擴大為所有 StrictMode 生命週期情境皆已覆蓋。
 
 # 7. 不要重複做的事情
 
@@ -267,4 +267,28 @@ P1 表示優先修正；P2 表示一般修正。保留各輪問題描述作為�
 - **本輪修改檔案：** Codex 僅更新 `docs/code_review_handoff.md`；未修改產品程式、測試或 Git 提交。
 - **下一步：** 將本輪通過結果交給使用者。若要保存第二輪進度，後續可依使用者授權建立本機 commit，務必包含新增的 `src/utils/subscriptionHelpers.ts`。本次未執行 commit、Push、Merge 或部署；無需再交由 Gemini 修正已驗收的七項問題。
 
+### 審查後補充：Gemini Chrome 實測證據
+
+- **日期：** 2026-11-14；快照檔名 UTC `12:39–12:40` 對應台灣時間 `20:39–20:40`。
+- **來源與分工：** 使用者轉交 Gemini 的 playwright-cli 實測回報；Codex 複核本機證據，未自行執行安裝或重跑該 Chrome 工作階段。
+- **Gemini 回報：** headed Chrome 在 `http://localhost:5173/` 開發模式注入 `warroom_subscriptions_v1 = "[null]"`，重新整理並切換美金／台幣總覽後，讀值仍為 `[null]`；CR-06 的此瀏覽器操作情境通過。
+- **Codex 已確認的證據：** `.playwright-cli/page-2026-11-14T12-39-42-202Z.yml` 與 `page-2026-11-14T12-40-02-369Z.yml`，以及截圖 `/Users/kennykang/.gemini/antigravity/brain/f1fd3dcd-4f45-4ce7-b665-d2400049ce6c/chrome_strictmode_verified.png` 可見損壞資料警告與匯出按鈕。`.playwright-cli/console-2026-11-14T12-39-05-825Z.log` 可見 React 開發模式訊息與 favicon 404，該紀錄未見應用程式 JS 例外。
+- **證據限制：** 本次查看的快照／截圖不直接包含 localStorage 原始讀值；「切換後仍為 `[null]`」依 Gemini 實測回報記錄，非 Codex 獨立讀值。favicon 404 為圖示資源缺失，不影響上述防覆寫驗收。
+- **Git 狀態：** 已確認本機 HEAD 為 `0df4ead`（第二輪修正提交），第一輪修正為 `03858a7`；本次檢查前只有 `.playwright-cli/` 未追蹤。本次只更新此文件，未修改程式、清理測試資料、關閉 Gemini 的瀏覽器或變更 `.gitignore`。
+- **尚未覆蓋：** 真實瀏覽器儲存權限封鎖／配額耗盡，以及先前列出的手機、完整鍵盤、檔案選取器與外部 API 情境，仍不宣稱通過。本次只複核證據與文件，未重新執行建置或測試。
+- **建議下一步：** 若要讓 Git 保持乾淨，後續可決定保留、搬移或忽略 `.playwright-cli/` 測試紀錄；不要將其不加檢查地納入程式提交。
+
 協作方式：目前透過本文件與使用者通知交接，沒有建立自動通知或直接對話通道。本輪審查已通過；若未來發現新問題，保留既有歷史並以新編號及新的 Gemini／Codex 輪次記錄。
+
+### 後續收尾紀錄（2026-11-14 20:47 Asia/Taipei，Gemini）
+
+- **處理項目（不變更已通過之 CR-01～CR-07 結論與既有限制）：**
+  1. **`.gitignore` 排除本機測試紀錄**：加入 `/.playwright-cli/`（事前已確認 `.playwright-cli/` 未被 Git 追蹤，並保留本機紀錄未刪除）。
+  2. **修正 `/favicon.ico` 404**：新增戰情室風格圖示 `public/favicon.svg`，並於 `index.html` 加入 `<link rel="icon" type="image/svg+xml" href="/favicon.svg" />`。
+- **驗證結果：**
+  - `git check-ignore -v .playwright-cli/`：通過（`.gitignore:34:/.playwright-cli/	.playwright-cli/`）。
+  - `git diff --check`：通過。
+  - `npm run build`（`tsc -b && vite build`）：通過（0 錯誤，819ms）。
+  - `npm test`（`node --experimental-strip-types --test tests/*.test.ts`）：通過（3 suites、11 tests、11 pass、0 fail）。
+  - **Chrome 實機重新載入驗證（`http://localhost:5173/`）**：`playwright-cli reload` 後 `console error` 回傳 `Errors: 0, Warnings: 0`（不再出現 `/favicon.ico` 404），且 `/favicon.svg` 回應 `status: 200`（`image/svg+xml`）。
+- **未變動之驗證限制：** 真實系統級瀏覽器儲存權限／配額限制（`SecurityError` / `QuotaExceededError`）仍未於真實瀏覽器環境觸發。
